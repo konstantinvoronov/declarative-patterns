@@ -108,7 +108,29 @@ This operation may fail, and the caller must decide what to do.
 
 ---
 
-## 3. Use `runCatching` at Operation Boundaries
+
+
+## 3. Logging Ownership Rule
+
+Functions that return `Result<T>` should not log failures.
+
+They should only wrap the lower-level `Throwable` with clear function-level context
+and return the new failed `Result`.
+
+Logging belongs to the function that consumes the `Result` and converts it into
+a final side effect: UI state, API response, background job result, crash report,
+user-visible behavior, or legacy code that returns `void` / `Unit` or a nullable result.
+
+Rule:
+
+```text
+If the function returns Result<T>, wrap but do not log.
+If the function consumes Result<T> and does not return it further, log/report/convert.
+```
+
+---
+
+## 4. Use `runCatching` at Operation Boundaries
 
 Use `runCatching` where external or risky code may throw.
 
@@ -148,7 +170,7 @@ This is better than returning `null`, because the error is preserved.
 
 ---
 
-## 4. Use `try/catch` When Mapping Needs Branches
+## 5. Use `try/catch` When Mapping Needs Branches
 
 `runCatching` is compact.
 
@@ -183,7 +205,7 @@ try/catch = explicit exception classification
 
 ---
 
-## 5. Always Preserve `cause`
+## 6. Always Preserve `cause`
 
 This is the most important rule.
 
@@ -229,7 +251,7 @@ Caused by: IOException: Connection reset
 
 ---
 
-## 6. Always Wrap Failure at the Function Boundary
+## 7. Always Wrap Failure at the Function Boundary
 
 Each meaningful fallible function should add its own context before returning failure.
 
@@ -334,7 +356,7 @@ RuntimeException("Repository error", cause)
 
 ---
 
-## 6.1. Wrapping Rule
+## 7.1. Wrapping Rule
 
 The rule is not:
 
@@ -377,7 +399,7 @@ caused by: IOException: Connection reset
 
 ---
 
-## 6.2. Do Not Wrap Meaningless Micro-Steps
+## 7.2. Do Not Wrap Meaningless Micro-Steps
 
 Do not wrap every tiny internal line.
 
@@ -424,7 +446,7 @@ Not one wrapper per line.
 
 ---
 
-## 7. Add `mapFailure` as a Small Vanilla Extension
+## 8. Add `mapFailure` as a Small Vanilla Extension
 
 Kotlin has `map`, `mapCatching`, `recover`, and `recoverCatching`, but it does not have a standard `mapFailure`.
 
@@ -467,7 +489,7 @@ fun loadUser(): Result<User> {
 
 ---
 
-## 8. Use `map` for Safe Success Transformation
+## 9. Use `map` for Safe Success Transformation
 
 Use `map` when transforming a successful value and the transform should be simple.
 
@@ -489,7 +511,7 @@ If loadUser() fails, keep the same failure.
 
 ---
 
-## 9. Use `mapCatching` When Transformation May Throw
+## 10. Use `mapCatching` When Transformation May Throw
 
 Use `mapCatching` when the success transformation can throw and should be converted into `Result.failure`.
 
@@ -532,7 +554,7 @@ fun fetchUserDto(): Result<UserDto> {
 
 ---
 
-## 10. Use `recover` Only for Valid Fallback Success
+## 11. Use `recover` Only for Valid Fallback Success
 
 `recover` converts a failure into a success value.
 
@@ -570,7 +592,7 @@ recover means: failure is acceptable and can become a valid success.
 
 ---
 
-## 11. Use `recoverCatching` When Fallback May Throw
+## 12. Use `recoverCatching` When Fallback May Throw
 
 Use `recoverCatching` when fallback logic itself may fail.
 
@@ -593,7 +615,7 @@ If local also throws, return failure.
 
 ---
 
-## 12. Use `getOrThrow()` for Sequential Orchestration
+## 13. Use `getOrThrow()` for Sequential Orchestration
 
 `getOrThrow()` returns the value if the result is successful, or throws the encapsulated `Throwable` if it failed.
 
@@ -648,7 +670,7 @@ Then wrap once at the current function boundary.
 
 ---
 
-## 13. Use `fold` at Decision Points
+## 14. Use `fold` at Decision Points
 
 Use `fold` when you need to finally branch into success/failure behavior.
 
@@ -689,57 +711,75 @@ Do not overuse fold for internal chaining.
 
 ---
 
-## 14. Use `exceptionOrNull()` for Inspection
+## 15. Use `exceptionOrNull()` Only at Consuming Boundaries
 
-Use `exceptionOrNull()` when you need to inspect or log a failure without consuming it.
+Use `exceptionOrNull()` when a function consumes a `Result<T>` and does not return it further.
+
+Good:
 
 ```kotlin
-val result = repository.loadUser()
+fun runSyncJob() {
+    val result = syncRepository.sync()
 
-result.exceptionOrNull()?.let { throwable ->
-    logger.error("Failed to load user", throwable)
+    result.exceptionOrNull()?.let { throwable ->
+        logger.error("SyncJob.runSyncJob failed", throwable)
+    }
 }
 ```
 
-This is useful when the result should still be passed onward.
+Bad:
 
----
-
-## 15. Use `onSuccess` and `onFailure` for Side Effects
-
-Use `onSuccess` and `onFailure` for logging, analytics, metrics, or debugging side effects.
+This is bad because the same failure may be logged again by the caller.
 
 ```kotlin
 fun loadUser(): Result<User> {
-    return repository.loadUser()
-        .onSuccess { user ->
-            logger.info("Loaded user ${user.id}")
-        }
-        .onFailure { throwable ->
-            logger.error("Failed to load user", throwable)
-        }
+val result = repository.loadUser()
+
+    result.exceptionOrNull()?.let { throwable ->
+        logger.error("Failed to load user", throwable)
+    }
+
+    return result
 }
 ```
+
+Do not inspect and log a failure if the same Result<T> is still being returned upward.
+
+---
+
+## 16. Use `onSuccess` and `onFailure` Only at Consuming Boundaries
+
+Use `onSuccess` and `onFailure` for side effects only when the current function consumes the `Result<T>` and does not return it further.
 
 Do not use them for main transformation logic.
 
 Good:
 
 ```kotlin
-result
-    .onFailure { logger.error("Failed", it) }
-    .map { value -> value.toUiModel() }
+fun runSyncJob() {
+    syncRepository.sync()
+        .onSuccess {
+            logger.info("SyncJob.runSyncJob completed")
+        }
+        .onFailure { throwable ->
+            logger.error("SyncJob.runSyncJob failed", throwable)
+        }
+}
 ```
 
 Bad:
 
 ```kotlin
-var user: User? = null
-
-result.onSuccess {
-    user = it
+fun loadUser(): Result<User> {
+    return repository.loadUser()
+        .onFailure { throwable ->
+            logger.error("Failed to load user", throwable)
+        }
 }
 ```
+
+This is bad because loadUser() still returns Result<User>.
+It should wrap the failure, not log it.
 
 Prefer `map`, `fold`, or `getOrThrow`.
 
@@ -747,7 +787,7 @@ Prefer `map`, `fold`, or `getOrThrow`.
 
 # Direct Failure Handling Patterns by Routine Type
 
-## 16. Simple Synchronous Routine
+## 17. Simple Synchronous Routine
 
 Use `runCatching`.
 
@@ -775,7 +815,7 @@ local calculations that may fail
 
 ---
 
-## 17. Synchronous Routine Calling Another `Result<T>` Routine
+## 18. Synchronous Routine Calling Another `Result<T>` Routine
 
 Use `getOrThrow()` inside `runCatching`.
 
@@ -797,7 +837,7 @@ This is better than returning the lower-level result directly because this funct
 
 ---
 
-## 18. Sequential Orchestration Routine
+## 19. Sequential Orchestration Routine
 
 Use `getOrThrow()` for each step.
 
@@ -826,7 +866,7 @@ This gives a clean chain and avoids nested `fold`.
 
 ---
 
-## 19. Suspend Routine
+## 20. Suspend Routine
 
 Do not use plain `runCatching` blindly if coroutine cancellation matters.
 
@@ -871,7 +911,7 @@ Cancellation should normally continue propagating.
 
 ---
 
-## 20. Fire-and-Forget Coroutine Routine
+## 21. Fire-and-Forget Coroutine Routine
 
 If the routine is launched and does not return `Result<T>`, catch and log inside the coroutine.
 
@@ -928,7 +968,7 @@ They must log, report, or convert failure into observable state.
 
 ---
 
-## 21. Routine That Updates UI State
+## 22. Routine That Updates UI State
 
 Convert `Result<T>` into explicit UI state at the edge.
 
@@ -961,7 +1001,7 @@ The ViewModel/controller is the correct place to turn failure into UI state.
 
 ---
 
-## 22. Routine with Fallback
+## 23. Routine with Fallback
 
 Use `recover` or `recoverCatching` only when fallback is a valid success.
 
@@ -1003,7 +1043,7 @@ unless `User.empty()` is a real valid business state.
 
 ---
 
-## 23. Routine with Optional Value
+## 24. Routine with Optional Value
 
 Do not use failure for normal absence.
 
@@ -1039,7 +1079,7 @@ and return failure just because user is not cached.
 
 ---
 
-## 24. Routine with Validation
+## 25. Routine with Validation
 
 Validation can be handled as `Result<T>` with `IllegalArgumentException` or another standard exception type.
 
@@ -1082,7 +1122,7 @@ caused by: IllegalArgumentException: validateEmail failed: email does not contai
 
 ---
 
-## 25. Routine That Must Throw Instead of Return `Result<T>`
+## 26. Routine That Must Throw Instead of Return `Result<T>`
 
 Some APIs require throwing.
 
@@ -1122,7 +1162,7 @@ suspend fun loadCurrentUserOrThrow(): User {
 
 # Logging Patterns
 
-## 26. Log the Full Throwable
+## 27. Log the Full Throwable
 
 For normal logging:
 
@@ -1138,7 +1178,7 @@ val text = throwable.stackTraceToString()
 
 ---
 
-## 27. Compact Cause-Chain Logging
+## 28. Compact Cause-Chain Logging
 
 For compact cause-chain logs:
 
@@ -1170,7 +1210,7 @@ caused by: IOException: Connection reset
 
 ---
 
-## 28. Cause Helpers
+## 29. Cause Helpers
 
 Find a specific cause type:
 
@@ -1206,7 +1246,7 @@ val root = throwable.rootCause()
 
 # Layered Failure Wrapping Pattern
 
-## 29. API Layer
+## 30. API Layer
 
 ```kotlin
 class UserApi(
@@ -1230,7 +1270,7 @@ class UserApi(
 
 ---
 
-## 30. Repository Layer
+## 31. Repository Layer
 
 ```kotlin
 class UserRepository(
@@ -1253,7 +1293,7 @@ class UserRepository(
 
 ---
 
-## 31. ViewModel / Controller Layer
+## 32. ViewModel / Controller Layer
 
 ```kotlin
 class DashboardController(
@@ -1281,7 +1321,7 @@ class DashboardController(
 
 ---
 
-## 32. UI Edge
+## 33. UI Edge
 
 ```kotlin
 controller.loadDashboard().fold(
@@ -1304,7 +1344,7 @@ controller.loadDashboard().fold(
 
 # Anti-Patterns
 
-## 33. Returning Nullable to Hide Failure
+## 34. Returning Nullable to Hide Failure
 
 Bad:
 
@@ -1335,7 +1375,7 @@ fun loadUser(): Result<User> {
 
 ---
 
-## 34. Passing Through Lower-Level Failure Without Context
+## 35. Passing Through Lower-Level Failure Without Context
 
 Bad:
 
@@ -1363,7 +1403,7 @@ fun loadCurrentUser(): Result<User> {
 
 ---
 
-## 35. Losing Original Cause
+## 36. Losing Original Cause
 
 Bad:
 
@@ -1379,7 +1419,7 @@ Result.failure(RuntimeException("Repository failed", throwable))
 
 ---
 
-## 36. Vague Wrapper Messages
+## 37. Vague Wrapper Messages
 
 Bad:
 
@@ -1400,7 +1440,7 @@ RuntimeException(
 
 ---
 
-## 37. Using `recover` to Hide Real Failures
+## 38. Using `recover` to Hide Real Failures
 
 Bad:
 

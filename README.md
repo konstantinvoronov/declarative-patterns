@@ -12,11 +12,10 @@ Instead of prompting:
 Write good Kotlin.
 ```
 
-you can prompt:
+you can prompt and atach MD file with instructions:
 
 ```text
-Update this code following the failure-handling patterns from this file.
-Use these rules exactly unless there is a clear reason not to.
+Update THISFILE following this patterns and instuctions
 ```
 
 The goal is to make architectural preferences concrete enough that both humans and AI tools can reuse them consistently.
