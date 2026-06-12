@@ -108,8 +108,6 @@ This operation may fail, and the caller must decide what to do.
 
 ---
 
-
-
 ## 3. Logging Ownership Rule
 
 Functions that return `Result<T>` should not log failures.
