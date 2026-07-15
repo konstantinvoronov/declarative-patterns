@@ -6,7 +6,7 @@ The goal is to use only vanilla Kotlin tools while applying declarative failure-
 
 - make failures explicit;
 - preserve the full cause chain;
-- wrap failures at meaningful function boundaries;
+- wrap failures at meaningful function boun[declarative_failure_handling_patterns_vanilla_swift.md](../swift/declarative_failure_handling_patterns_vanilla_swift.md)daries;
 - explain exactly what failed in each function;
 - avoid nullable values as hidden failures;
 - avoid silently losing coroutine and background failures.
